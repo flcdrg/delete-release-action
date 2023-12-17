@@ -28961,7 +28961,7 @@ function run() {
         const suppress_errors = Boolean(core.getInput('suppress_errors'));
         core.info(`Input of action, release_name: ${release_name}, release_id: ${release_id}, suppress_errors: ${suppress_errors}`);
         if (!release_name && !release_id) {
-            processFailOrWarning(`release_name or release_id should provided! You input release_name: ${release_name}, release_id: ${release_id}`, suppress_errors);
+            processFailOrWarning(`release_name or release_id should be provided! You input release_name: ${release_name}, release_id: ${release_id}`, suppress_errors);
             return;
         }
         // Get the JSON webhook payload for the event that triggered the workflow
@@ -28971,32 +28971,46 @@ function run() {
         const octokit = github.getOctokit(process.env.GITHUB_TOKEN);
         const { owner, repo } = github.context.repo;
         try {
-            // make a rule: release_id has high priority then release_name
-            // list all release and find the release according to the id or name
-            const { data: releases } = yield octokit.rest.repos.listReleases({
-                owner,
-                repo,
-            });
-            let filtered_releases;
-            if (release_id) {
-                filtered_releases = releases.filter((release) => release.id === release_id);
-                if (filtered_releases.length === 0) {
-                    processFailOrWarning(`Could not find any release with the id of ${release_id}`, suppress_errors);
-                    return;
-                }
+            let found_release;
+            if (release_id > 0) {
+                // check if the release_id is valid
+                const { data: release } = yield octokit.rest.repos.getRelease({
+                    owner,
+                    repo,
+                    release_id,
+                });
+                core.info(`Find release with id: ${release_id}, name: ${release.name}`);
+                found_release = release;
             }
             else {
-                filtered_releases = releases.filter((release) => release.name === release_name);
-                if (filtered_releases.length === 0) {
-                    processFailOrWarning(`Could not find any release with the name of ${release_name}`, suppress_errors);
-                    return;
+                // make a rule: release_id has high priority then release_name
+                // list all release and find the release according to the id or name
+                const { data: releases } = yield octokit.rest.repos.listReleases({
+                    owner,
+                    repo,
+                });
+                let filtered_releases;
+                if (release_id) {
+                    filtered_releases = releases.filter((release) => release.id === release_id);
+                    if (filtered_releases.length === 0) {
+                        processFailOrWarning(`Could not find any release with the id of ${release_id}`, suppress_errors);
+                        return;
+                    }
                 }
-                if (filtered_releases.length > 1) {
-                    processFailOrWarning(`Find more than one release with the name of ${release_name}`, suppress_errors);
-                    return;
+                else {
+                    filtered_releases = releases.filter((release) => release.name === release_name);
+                    if (filtered_releases.length === 0) {
+                        processFailOrWarning(`Could not find any release with the name of ${release_name}`, suppress_errors);
+                        return;
+                    }
+                    if (filtered_releases.length > 1) {
+                        processFailOrWarning(`Find more than one release with the name of ${release_name}`, suppress_errors);
+                        return;
+                    }
                 }
+                found_release = filtered_releases[0];
             }
-            const { assets } = filtered_releases[0];
+            const { assets } = found_release;
             core.info(`Prepare to delete assets: ${assets}`);
             const deleted_assets = [];
             assets.forEach(({ id: asset_id, name: asset_name }) => __awaiter(this, void 0, void 0, function* () {
